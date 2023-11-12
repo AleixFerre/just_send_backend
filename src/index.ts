@@ -1,10 +1,8 @@
-import cors from 'cors';
 import express from 'express';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
 
 const app = express();
-app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -13,9 +11,14 @@ const io = new Server(server, {
   }
 });
 
-type Rooms = Record<string, string>;
+type RoomCodes = Record<string, string>; // SocketID - RoomCode
 
-const rooms: Rooms = {};
+type RoomUsers = {
+  [roomCode: string]: string[];
+};
+
+const roomUsers: RoomUsers = {};
+const roomCodes: RoomCodes = {};
 
 app.get('/', (req, res) => {
   res.send('Socket.IO server is running!');
@@ -31,16 +34,23 @@ io.on('connection', (socket: Socket) => {
   socket.on('createRoom', () => {
     const roomCode = generateRoomCode();
     socket.join(roomCode);
-    rooms[socket.id] = roomCode;
-    console.log(`User created room: ${roomCode}`);
+    roomCodes[socket.id] = roomCode;
+    roomUsers[roomCode] = [socket.id];
+    console.log(`User created room: ${socket.id} - ${roomCode}`);
     socket.emit('roomCode', roomCode);
-  });
 
-  socket.on('joinRoom', (room: string) => {
-    socket.join(room);
-    console.log(`User joined room: ${room}`);
+    io.to(roomCode).emit('usersInRoom', roomUsers[roomCode]);
   });
+  
+  socket.on('joinRoom', (roomCode: string) => {
+    socket.join(roomCode);
+    console.log(`User joined room: ${roomCode} (by ${socket.id})`);
+    socket.emit('roomCode', roomCode);
 
+    roomUsers[roomCode].push(socket.id);
+    io.to(roomCode).emit('usersInRoom', roomUsers[roomCode]);
+  });
+  
   socket.on('file', (data: { room: string, file: string }) => {
     io.to(data.room).emit('file', data.file);
   });
@@ -58,5 +68,6 @@ server.listen(PORT, () => {
 
 
 function generateRoomCode() {
-  return '0000'
+  const numero = Math.floor(Math.random() * 10000);
+  return numero.toString().padStart(4, '0');
 }
